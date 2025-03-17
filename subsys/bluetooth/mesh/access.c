@@ -10,13 +10,13 @@
 #include <zephyr/sys/util.h>
 #include <zephyr/sys/byteorder.h>
 
-#include <zephyr/net/buf.h>
+#include <zephyr/net_buf.h>
 #include <zephyr/bluetooth/bluetooth.h>
 #include <zephyr/bluetooth/mesh.h>
 
 #include "common/bt_str.h"
 
-#include "host/testing.h"
+#include "testing.h"
 
 #include "mesh.h"
 #include "net.h"
@@ -111,10 +111,10 @@ static const struct {
 	uint8_t page;
 } comp_data_pages[] = {
 	{ "bt/mesh/cmp/0", 0, },
-#if IS_ENABLED(CONFIG_BT_MESH_COMP_PAGE_1)
+#if defined(CONFIG_BT_MESH_COMP_PAGE_1)
 	{ "bt/mesh/cmp/1", 1, },
 #endif
-#if IS_ENABLED(CONFIG_BT_MESH_COMP_PAGE_2)
+#if defined(CONFIG_BT_MESH_COMP_PAGE_2)
 	{ "bt/mesh/cmp/2", 2, },
 #endif
 };
@@ -1530,8 +1530,7 @@ int bt_mesh_model_recv(struct bt_mesh_msg_ctx *ctx, struct net_buf_simple *buf)
 	LOG_DBG("len %u: %s", buf->len, bt_hex(buf->data, buf->len));
 
 	if (IS_ENABLED(CONFIG_BT_TESTING)) {
-		bt_test_mesh_model_recv(ctx->addr, ctx->recv_dst, buf->data,
-					buf->len);
+		bt_mesh_test_model_recv(ctx->addr, ctx->recv_dst, buf->data, buf->len);
 	}
 
 	if (get_opcode(buf, &opcode) < 0) {
@@ -2617,7 +2616,7 @@ void bt_mesh_comp_data_clear(void)
 
 int bt_mesh_models_metadata_change_prepare(void)
 {
-#if IS_ENABLED(CONFIG_BT_MESH_LARGE_COMP_DATA_SRV)
+#if defined(CONFIG_BT_MESH_LARGE_COMP_DATA_SRV)
 	return bt_mesh_models_metadata_store();
 #else
 	return -ENOTSUP;

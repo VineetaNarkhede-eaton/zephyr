@@ -252,7 +252,7 @@ static void rx_thread(void *p1, void *p2, void *p3)
 		/* Let the ISR continue receiving new packets */
 		uart_irq_rx_enable(cfg->uart);
 
-		buf = net_buf_get(&h4->rx.fifo, K_FOREVER);
+		buf = k_fifo_get(&h4->rx.fifo, K_FOREVER);
 		do {
 			uart_irq_rx_enable(cfg->uart);
 
@@ -266,7 +266,7 @@ static void rx_thread(void *p1, void *p2, void *p3)
 			k_yield();
 
 			uart_irq_rx_disable(cfg->uart);
-			buf = net_buf_get(&h4->rx.fifo, K_NO_WAIT);
+			buf = k_fifo_get(&h4->rx.fifo, K_NO_WAIT);
 		} while (buf);
 	}
 }
@@ -352,7 +352,7 @@ static inline void read_payload(const struct device *dev)
 	reset_rx(h4);
 
 	LOG_DBG("Putting buf %p to rx fifo", buf);
-	net_buf_put(&h4->rx.fifo, buf);
+	k_fifo_put(&h4->rx.fifo, buf);
 }
 
 static inline void read_header(const struct device *dev)
@@ -398,7 +398,7 @@ static inline void process_tx(const struct device *dev)
 	int bytes;
 
 	if (!h4->tx.buf) {
-		h4->tx.buf = net_buf_get(&h4->tx.fifo, K_NO_WAIT);
+		h4->tx.buf = k_fifo_get(&h4->tx.fifo, K_NO_WAIT);
 		if (!h4->tx.buf) {
 			LOG_ERR("TX interrupt but no pending buffer!");
 			uart_irq_tx_disable(cfg->uart);
@@ -447,7 +447,7 @@ static inline void process_tx(const struct device *dev)
 done:
 	h4->tx.type = BT_HCI_H4_NONE;
 	net_buf_unref(h4->tx.buf);
-	h4->tx.buf = net_buf_get(&h4->tx.fifo, K_NO_WAIT);
+	h4->tx.buf = k_fifo_get(&h4->tx.fifo, K_NO_WAIT);
 	if (!h4->tx.buf) {
 		uart_irq_tx_disable(cfg->uart);
 	}
@@ -496,7 +496,7 @@ static int h4_send(const struct device *dev, struct net_buf *buf)
 
 	LOG_DBG("buf %p type %u len %u", buf, bt_buf_get_type(buf), buf->len);
 
-	net_buf_put(&h4->tx.fifo, buf);
+	k_fifo_put(&h4->tx.fifo, buf);
 	uart_irq_tx_enable(cfg->uart);
 
 	return 0;
@@ -545,6 +545,35 @@ static int h4_open(const struct device *dev, bt_hci_recv_t recv)
 	return 0;
 }
 
+int __weak bt_hci_transport_teardown(const struct device *dev)
+{
+	return 0;
+}
+
+static int h4_close(const struct device *dev)
+{
+	const struct h4_config *cfg = dev->config;
+	struct h4_data *h4 = dev->data;
+	int err;
+
+	LOG_DBG("");
+
+	uart_irq_rx_disable(cfg->uart);
+	uart_irq_tx_disable(cfg->uart);
+
+	err = bt_hci_transport_teardown(cfg->uart);
+	if (err < 0) {
+		return err;
+	}
+
+	/* Abort RX thread */
+	k_thread_abort(cfg->rx_thread);
+
+	h4->recv = NULL;
+
+	return 0;
+}
+
 #if defined(CONFIG_BT_HCI_SETUP)
 static int h4_setup(const struct device *dev, const struct bt_hci_setup_params *params)
 {
@@ -564,9 +593,10 @@ static int h4_setup(const struct device *dev, const struct bt_hci_setup_params *
 }
 #endif
 
-static const struct bt_hci_driver_api h4_driver_api = {
+static DEVICE_API(bt_hci, h4_driver_api) = {
 	.open = h4_open,
 	.send = h4_send,
+	.close = h4_close,
 #if defined(CONFIG_BT_HCI_SETUP)
 	.setup = h4_setup,
 #endif

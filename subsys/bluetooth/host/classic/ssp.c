@@ -1,12 +1,14 @@
 /*
- * Copyright (c) 2017 Nordic Semiconductor ASA
+ * Copyright (c) 2017-2025 Nordic Semiconductor ASA
  * Copyright (c) 2015 Intel Corporation
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <errno.h>
 #include <stdint.h>
 
+#include <zephyr/bluetooth/conn.h>
 #include <zephyr/sys/byteorder.h>
 
 #include <zephyr/bluetooth/buf.h>
@@ -19,6 +21,7 @@
 
 #include "host/hci_core.h"
 #include "host/conn_internal.h"
+#include "l2cap_br_internal.h"
 
 #define LOG_LEVEL CONFIG_BT_HCI_CORE_LOG_LEVEL
 #include <zephyr/logging/log.h>
@@ -87,7 +90,8 @@ int bt_conn_auth_pincode_entry(struct bt_conn *conn, const char *pin)
 		return -EINVAL;
 	}
 
-	if (conn->type != BT_CONN_TYPE_BR) {
+	if (!bt_conn_is_type(conn, BT_CONN_TYPE_BR)) {
+		LOG_DBG("Invalid connection type: %u for %p", conn->type, conn);
 		return -EINVAL;
 	}
 
@@ -158,11 +162,20 @@ static uint8_t ssp_pair_method(const struct bt_conn *conn)
 
 static uint8_t ssp_get_auth(const struct bt_conn *conn)
 {
+	bt_security_t max_sec_level;
+	uint8_t mitm = 0;
+
+	/* Check if the MITM is required by service */
+	max_sec_level = bt_l2cap_br_get_max_sec_level();
+	if ((max_sec_level > BT_SECURITY_L2) && (ssp_pair_method(conn) > JUST_WORKS)) {
+		mitm = BT_MITM;
+	}
+
 	/* Validate no bond auth request, and if valid use it. */
 	if ((conn->br.remote_auth == BT_HCI_NO_BONDING) ||
 	    ((conn->br.remote_auth == BT_HCI_NO_BONDING_MITM) &&
 	     (ssp_pair_method(conn) > JUST_WORKS))) {
-		return conn->br.remote_auth;
+		return conn->br.remote_auth | mitm;
 	}
 
 	/* Local & remote have enough IO capabilities to get MITM protection. */
@@ -213,6 +226,14 @@ static int ssp_confirm_neg_reply(struct bt_conn *conn)
 
 static void ssp_pairing_complete(struct bt_conn *conn, uint8_t status)
 {
+	/* When the ssp pairing complete event notified,
+	 * clear the pairing flag.
+	 */
+	atomic_clear_bit(conn->flags, BT_CONN_BR_PAIRING);
+	atomic_set_bit_to(conn->flags, BT_CONN_BR_PAIRED, !status);
+
+	LOG_DBG("Pairing completed status %d", status);
+
 	if (!status) {
 		bool bond = !atomic_test_bit(conn->flags, BT_CONN_BR_NOBOND);
 		struct bt_conn_auth_info_cb *listener, *next;
@@ -228,8 +249,8 @@ static void ssp_pairing_complete(struct bt_conn *conn, uint8_t status)
 
 		SYS_SLIST_FOR_EACH_CONTAINER_SAFE(&bt_auth_info_cbs, listener,
 						  next, node) {
-			if (listener->pairing_complete) {
-				listener->pairing_complete(conn, status);
+			if (listener->pairing_failed) {
+				listener->pairing_failed(conn, status);
 			}
 		}
 	}
@@ -347,10 +368,6 @@ int bt_ssp_start_security(struct bt_conn *conn)
 		return -EBUSY;
 	}
 
-	if (conn->required_sec_level > BT_SECURITY_L3) {
-		return -ENOTSUP;
-	}
-
 	if (get_io_capa() == BT_IO_NO_INPUT_OUTPUT &&
 	    conn->required_sec_level > BT_SECURITY_L2) {
 		return -EINVAL;
@@ -443,6 +460,23 @@ void bt_hci_link_key_notify(struct net_buf *buf)
 
 	LOG_DBG("%s, link type 0x%02x", bt_addr_str(&evt->bdaddr), evt->key_type);
 
+	if (IS_ENABLED(CONFIG_BT_SMP_SC_ONLY) && (evt->key_type != BT_LK_AUTH_COMBINATION_P256)) {
+		/*
+		 * When in Secure Connections Only mode, all services
+		 * (except those allowed to have Security Mode 4, Level 0)
+		 * available on the BR/EDR physical transport require Security
+		 * Mode 4, Level 4.
+		 * Link key type should be P-256 based Secure Simple Pairing
+		 * and Secure Authentication.
+		 */
+		LOG_WRN("For SC only mode, link key type should be %d",
+			BT_LK_AUTH_COMBINATION_P256);
+		ssp_pairing_complete(conn, bt_security_err_get(BT_HCI_ERR_AUTH_FAIL));
+		bt_conn_disconnect(conn, BT_HCI_ERR_AUTH_FAIL);
+		bt_conn_unref(conn);
+		return;
+	}
+
 	if (!conn->br.link_key) {
 		conn->br.link_key = bt_keys_get_link_key(&evt->bdaddr);
 	}
@@ -471,11 +505,6 @@ void bt_hci_link_key_notify(struct net_buf *buf)
 		conn->br.link_key->flags |= BT_LINK_KEY_AUTHENTICATED;
 		__fallthrough;
 	case BT_LK_UNAUTH_COMBINATION_P192:
-		/* Mark no-bond so that link-key is removed on disconnection */
-		if (ssp_get_auth(conn) < BT_HCI_DEDICATED_BONDING) {
-			atomic_set_bit(conn->flags, BT_CONN_BR_NOBOND);
-		}
-
 		memcpy(conn->br.link_key->val, evt->link_key, 16);
 		break;
 	case BT_LK_AUTH_COMBINATION_P256:
@@ -483,11 +512,6 @@ void bt_hci_link_key_notify(struct net_buf *buf)
 		__fallthrough;
 	case BT_LK_UNAUTH_COMBINATION_P256:
 		conn->br.link_key->flags |= BT_LINK_KEY_SC;
-
-		/* Mark no-bond so that link-key is removed on disconnection */
-		if (ssp_get_auth(conn) < BT_HCI_DEDICATED_BONDING) {
-			atomic_set_bit(conn->flags, BT_CONN_BR_NOBOND);
-		}
 
 		memcpy(conn->br.link_key->val, evt->link_key, 16);
 		break;
@@ -634,6 +658,12 @@ void bt_hci_io_capa_resp(struct net_buf *buf)
 	bt_conn_unref(conn);
 }
 
+/* Clear Bonding flag */
+#define BT_HCI_SET_NO_BONDING(auth) ((auth) & 0x01)
+
+/* Clear MITM flag */
+#define BT_HCI_SET_NO_MITM(auth) ((auth) & (~0x01))
+
 void bt_hci_io_capa_req(struct net_buf *buf)
 {
 	struct bt_hci_evt_io_capa_req *evt = (void *)buf->data;
@@ -650,13 +680,18 @@ void bt_hci_io_capa_req(struct net_buf *buf)
 		return;
 	}
 
-	resp_buf = bt_hci_cmd_create(BT_HCI_OP_IO_CAPABILITY_REPLY,
-				     sizeof(*cp));
-	if (!resp_buf) {
-		LOG_ERR("Out of command buffers");
-		bt_conn_unref(conn);
-		return;
+#if defined(CONFIG_BT_SMP_APP_PAIRING_ACCEPT)
+	if (bt_auth && bt_auth->pairing_accept) {
+		enum bt_security_err err;
+
+		err = bt_auth->pairing_accept(conn, NULL);
+		if (err != BT_SECURITY_ERR_SUCCESS) {
+			io_capa_neg_reply(&evt->bdaddr, BT_HCI_ERR_PAIRING_NOT_ALLOWED);
+			bt_conn_unref(conn);
+			return;
+		}
 	}
+#endif
 
 	/*
 	 * Set authentication requirements when acting as pairing initiator to
@@ -666,12 +701,56 @@ void bt_hci_io_capa_req(struct net_buf *buf)
 	 */
 	if (atomic_test_bit(conn->flags, BT_CONN_BR_PAIRING_INITIATOR)) {
 		if (get_io_capa() != BT_IO_NO_INPUT_OUTPUT) {
-			auth = BT_HCI_DEDICATED_BONDING_MITM;
+			if (atomic_test_bit(conn->flags, BT_CONN_BR_GENERAL_BONDING)) {
+				auth = BT_HCI_GENERAL_BONDING_MITM;
+			} else {
+				auth = BT_HCI_DEDICATED_BONDING_MITM;
+			}
 		} else {
-			auth = BT_HCI_DEDICATED_BONDING;
+			if (atomic_test_bit(conn->flags, BT_CONN_BR_GENERAL_BONDING)) {
+				auth = BT_HCI_GENERAL_BONDING;
+			} else {
+				auth = BT_HCI_DEDICATED_BONDING;
+			}
+		}
+
+		if (conn->required_sec_level < BT_SECURITY_L3) {
+			/* If security level less than L3, clear MITM flag. */
+			auth = BT_HCI_SET_NO_MITM(auth);
 		}
 	} else {
 		auth = ssp_get_auth(conn);
+
+		/*
+		 * Core v6.0, Vol 3, Part C, Section 4.3.1 Non-bondable mode
+		 * When a Bluetooth device is in non-bondable mode it shall not accept a
+		 * pairing request that results in bonding. Devices in non-bondable mode
+		 * may accept connections that do not request or require bonding.
+		 *
+		 * If the peer supports bonding mode, but the local is in non-bondable
+		 * mode, it will send a negative response with error code
+		 * `BT_HCI_ERR_PAIRING_NOT_ALLOWED`.
+		 */
+		if (!atomic_test_bit(conn->flags, BT_CONN_BR_BONDABLE) &&
+		    (conn->br.remote_auth > BT_HCI_NO_BONDING_MITM)) {
+			LOG_WRN("Invalid remote bonding requirements");
+			io_capa_neg_reply(&evt->bdaddr,
+					  BT_HCI_ERR_PAIRING_NOT_ALLOWED);
+			bt_conn_unref(conn);
+			return;
+		}
+	}
+
+	if (!atomic_test_bit(conn->flags, BT_CONN_BR_BONDABLE)) {
+		/* If bondable is false, clear bonding flag. */
+		auth = BT_HCI_SET_NO_BONDING(auth);
+	}
+
+	resp_buf = bt_hci_cmd_create(BT_HCI_OP_IO_CAPABILITY_REPLY, sizeof(*cp));
+	if (!resp_buf) {
+		LOG_ERR("Out of command buffers");
+		bt_conn_unref(conn);
+		return;
 	}
 
 	cp = net_buf_add(resp_buf, sizeof(*cp));
@@ -694,6 +773,11 @@ void bt_hci_ssp_complete(struct net_buf *buf)
 	if (!conn) {
 		LOG_ERR("Can't find conn for %s", bt_addr_str(&evt->bdaddr));
 		return;
+	}
+
+	/* Mark no-bond so that link-key will be removed on disconnection */
+	if (ssp_get_auth(conn) < BT_HCI_DEDICATED_BONDING) {
+		atomic_set_bit(conn->flags, BT_CONN_BR_NOBOND);
 	}
 
 	ssp_pairing_complete(conn, bt_security_err_get(evt->status));

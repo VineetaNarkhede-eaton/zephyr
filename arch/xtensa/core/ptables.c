@@ -250,23 +250,36 @@ static void map_memory_range(const uint32_t start, const uint32_t end,
 static void map_memory(const uint32_t start, const uint32_t end,
 		       const uint32_t attrs)
 {
-	map_memory_range(start, end, attrs);
-
 #ifdef CONFIG_XTENSA_MMU_DOUBLE_MAP
+	uint32_t uc_attrs = attrs & ~XTENSA_MMU_PTE_ATTR_CACHED_MASK;
+	uint32_t c_attrs = attrs | XTENSA_MMU_CACHED_WB;
+
 	if (sys_cache_is_ptr_uncached((void *)start)) {
+		map_memory_range(start, end, uc_attrs);
+
 		map_memory_range(POINTER_TO_UINT(sys_cache_cached_ptr_get((void *)start)),
-			POINTER_TO_UINT(sys_cache_cached_ptr_get((void *)end)),
-			attrs | XTENSA_MMU_CACHED_WB);
+			POINTER_TO_UINT(sys_cache_cached_ptr_get((void *)end)),	c_attrs);
 	} else if (sys_cache_is_ptr_cached((void *)start)) {
+		map_memory_range(start, end, c_attrs);
+
 		map_memory_range(POINTER_TO_UINT(sys_cache_uncached_ptr_get((void *)start)),
-			POINTER_TO_UINT(sys_cache_uncached_ptr_get((void *)end)), attrs);
-	}
+			POINTER_TO_UINT(sys_cache_uncached_ptr_get((void *)end)), uc_attrs);
+	} else
 #endif
+	{
+		map_memory_range(start, end, attrs);
+	}
 }
 
 static void xtensa_init_page_tables(void)
 {
 	volatile uint8_t entry;
+	static bool already_inited;
+
+	if (already_inited) {
+		return;
+	}
+	already_inited = true;
 
 	init_page_table(xtensa_kernel_ptables, XTENSA_L1_PAGE_TABLE_ENTRIES);
 	atomic_set_bit(l1_page_table_track, 0);
@@ -305,17 +318,16 @@ __weak void arch_xtensa_mmu_post_init(bool is_core0)
 
 void xtensa_mmu_init(void)
 {
-	if (_current_cpu->id == 0) {
-		/* This is normally done via arch_kernel_init() inside z_cstart().
-		 * However, before that is called, we go through the sys_init of
-		 * INIT_LEVEL_EARLY, which is going to result in TLB misses.
-		 * So setup whatever necessary so the exception handler can work
-		 * properly.
-		 */
-		xtensa_init_page_tables();
-	}
+	xtensa_init_page_tables();
 
 	xtensa_init_paging(xtensa_kernel_ptables);
+
+	/*
+	 * This is used to determine whether we are faulting inside double
+	 * exception if this is not zero. Sometimes SoC starts with this not
+	 * being set to zero. So clear it during boot.
+	 */
+	XTENSA_WSR(ZSR_DEPC_SAVE_STR, 0);
 
 	arch_xtensa_mmu_post_init(_current_cpu->id == 0);
 }

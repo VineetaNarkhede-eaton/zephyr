@@ -18,9 +18,6 @@
 		CREATE_OBJ_LEVEL(init, APPLICATION)
 		CREATE_OBJ_LEVEL(init, SMP)
 		__init_end = .;
-		__deferred_init_list_start = .;
-		KEEP(*(.z_deferred_init))
-		__deferred_init_list_end = .;
 	} GROUP_ROM_LINK_IN(RAMABLE_REGION, ROMABLE_REGION)
 
 	ITERABLE_SECTION_ROM_NUMERIC(device, Z_LINK_ITERABLE_SUBALIGN)
@@ -41,7 +38,7 @@
 	 */
 	SECTION_PROLOGUE(.text.z_shared_isr,,)
 	{
-		KEEP(*(.text.z_shared_isr))
+		KEEP(*(.text.z_shared_isr*))
 	} GROUP_ROM_LINK_IN(RAMABLE_REGION, ROMABLE_REGION)
 #endif
 
@@ -102,3 +99,5 @@
 #include <zephyr/linker/device-deps.ld>
 	} GROUP_ROM_LINK_IN(RAMABLE_REGION, ROMABLE_REGION)
 #endif /* !CONFIG_DEVICE_DEPS_DYNAMIC */
+
+#include <device-api-sections.ld>

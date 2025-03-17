@@ -106,7 +106,7 @@ void lwm2m_register_obj(struct lwm2m_engine_obj *obj)
 	k_mutex_lock(&registry_lock, K_FOREVER);
 #if defined(CONFIG_LWM2M_ACCESS_CONTROL_ENABLE)
 	/* If bootstrap, then bootstrap server should create the ac obj instances */
-#if !IS_ENABLED(CONFIG_LWM2M_RD_CLIENT_SUPPORT_BOOTSTRAP)
+#if !defined(CONFIG_LWM2M_RD_CLIENT_SUPPORT_BOOTSTRAP)
 	int server_obj_inst_id = lwm2m_server_short_id_to_inst(CONFIG_LWM2M_SERVER_DEFAULT_SSID);
 
 	access_control_add_obj(obj->obj_id, server_obj_inst_id);
@@ -169,7 +169,7 @@ static void engine_register_obj_inst(struct lwm2m_engine_obj_inst *obj_inst)
 {
 #if defined(CONFIG_LWM2M_ACCESS_CONTROL_ENABLE)
 	/* If bootstrap, then bootstrap server should create the ac obj instances */
-#if !IS_ENABLED(CONFIG_LWM2M_RD_CLIENT_SUPPORT_BOOTSTRAP)
+#if !defined(CONFIG_LWM2M_RD_CLIENT_SUPPORT_BOOTSTRAP)
 	int server_obj_inst_id = lwm2m_server_short_id_to_inst(CONFIG_LWM2M_SERVER_DEFAULT_SSID);
 
 	access_control_add(obj_inst->obj->obj_id, obj_inst->obj_inst_id, server_obj_inst_id);
@@ -515,6 +515,7 @@ static int lwm2m_check_buf_sizes(uint8_t data_type, uint16_t resource_length, ui
 		}
 		break;
 	case LWM2M_RES_TYPE_U32:
+	case LWM2M_RES_TYPE_U16:
 	case LWM2M_RES_TYPE_U8:
 	case LWM2M_RES_TYPE_S64:
 	case LWM2M_RES_TYPE_S32:
@@ -647,6 +648,7 @@ static int lwm2m_engine_set(const struct lwm2m_obj_path *path, const void *value
 		if (!lwm2m_validate_time_resource_lenghts(max_data_len, len)) {
 			LOG_ERR("Time Set: buffer length %u  max data len %zu not supported", len,
 				max_data_len);
+			k_mutex_unlock(&registry_lock);
 			return -EINVAL;
 		}
 
@@ -752,11 +754,6 @@ int lwm2m_set_u16(const struct lwm2m_obj_path *path, uint16_t value)
 int lwm2m_set_u32(const struct lwm2m_obj_path *path, uint32_t value)
 {
 	return lwm2m_engine_set(path, &value, 4);
-}
-
-int lwm2m_set_u64(const struct lwm2m_obj_path *path, uint64_t value)
-{
-	return lwm2m_engine_set(path, &value, 8);
 }
 
 int lwm2m_set_s8(const struct lwm2m_obj_path *path, int8_t value)
@@ -928,6 +925,7 @@ static int lwm2m_engine_get(const struct lwm2m_obj_path *path, void *buf, uint16
 			if (!lwm2m_validate_time_resource_lenghts(data_len, buflen)) {
 				LOG_ERR("Time get buffer length %u  data len %zu not supported",
 					buflen, data_len);
+				k_mutex_unlock(&registry_lock);
 				return -EINVAL;
 			}
 
@@ -1030,11 +1028,6 @@ int lwm2m_get_u32(const struct lwm2m_obj_path *path, uint32_t *value)
 	return lwm2m_engine_get(path, value, 4);
 }
 
-int lwm2m_get_u64(const struct lwm2m_obj_path *path, uint64_t *value)
-{
-	return lwm2m_engine_get(path, value, 8);
-}
-
 int lwm2m_get_s8(const struct lwm2m_obj_path *path, int8_t *value)
 {
 	return lwm2m_engine_get(path, value, 1);
@@ -1096,7 +1089,7 @@ int lwm2m_get_resource(const struct lwm2m_obj_path *path, struct lwm2m_engine_re
 size_t lwm2m_engine_get_opaque_more(struct lwm2m_input_context *in, uint8_t *buf, size_t buflen,
 				    struct lwm2m_opaque_context *opaque, bool *last_block)
 {
-	uint32_t in_len = opaque->remaining;
+	uint32_t in_len = opaque->len - opaque->offset;
 	uint16_t remaining = in->in_cpkt->max_len - in->offset;
 
 	if (in_len > buflen) {
@@ -1107,9 +1100,8 @@ size_t lwm2m_engine_get_opaque_more(struct lwm2m_input_context *in, uint8_t *buf
 		in_len = remaining;
 	}
 
-	opaque->remaining -= in_len;
 	remaining -= in_len;
-	if (opaque->remaining == 0U || remaining == 0) {
+	if (opaque->offset + in_len >= opaque->len) {
 		*last_block = true;
 	}
 
@@ -1731,13 +1723,11 @@ size_t lwm2m_cache_size(const struct lwm2m_time_series_resource *cache_entry)
 #if defined(CONFIG_LWM2M_RESOURCE_DATA_CACHE_SUPPORT)
 	uint32_t bytes_available;
 
-	/* ring_buf_is_empty() takes non-const pointer but still does not modify */
-	if (ring_buf_is_empty((struct ring_buf *) &cache_entry->rb)) {
+	if (ring_buf_is_empty(&cache_entry->rb)) {
 		return 0;
 	}
 
-	/* ring_buf_size_get() takes non-const pointer but still does not modify */
-	bytes_available = ring_buf_size_get((struct ring_buf *) &cache_entry->rb);
+	bytes_available = ring_buf_size_get(&cache_entry->rb);
 
 	return (bytes_available / sizeof(struct lwm2m_time_series_elem));
 #else

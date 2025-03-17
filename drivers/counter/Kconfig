@@ -68,7 +68,7 @@ source "drivers/counter/Kconfig.mcux_lptmr"
 
 source "drivers/counter/Kconfig.maxim_ds3231"
 
-source "drivers/counter/Kconfig.native_posix"
+source "drivers/counter/Kconfig.native_sim"
 
 source "drivers/counter/Kconfig.nxp_pit"
 
@@ -96,6 +96,14 @@ source "drivers/counter/Kconfig.dw"
 
 source "drivers/counter/Kconfig.rpi_pico"
 
+source "drivers/counter/Kconfig.max32_timer"
+
+source "drivers/counter/Kconfig.max32_rtc"
+
 source "drivers/counter/Kconfig.nxp_mrt"
+
+source "drivers/counter/Kconfig.renesas_ra"
+
+source "drivers/counter/Kconfig.renesas_rz"
 
 endif # COUNTER

@@ -314,6 +314,7 @@ struct tcp { /* TCP connection */
 	uint32_t keep_cnt;
 	uint32_t keep_cur;
 #endif /* CONFIG_NET_TCP_KEEPALIVE */
+	uint16_t recv_win_sent;
 	uint16_t recv_win_max;
 	uint16_t recv_win;
 	uint16_t send_win_max;
@@ -337,6 +338,7 @@ struct tcp { /* TCP connection */
 #endif /* CONFIG_NET_TCP_KEEPALIVE */
 	bool tcp_nodelay : 1;
 	bool addr_ref_done : 1;
+	bool rst_received : 1;
 };
 
 #define _flags(_fl, _op, _mask, _cond)					\

@@ -365,7 +365,7 @@ static int can_loopback_get_max_filters(const struct device *dev, bool ide)
 	return CONFIG_CAN_MAX_FILTER;
 }
 
-static const struct can_driver_api can_loopback_driver_api = {
+static DEVICE_API(can, can_loopback_driver_api) = {
 	.get_capabilities = can_loopback_get_capabilities,
 	.start = can_loopback_start,
 	.stop = can_loopback_stop,
@@ -436,6 +436,8 @@ static int can_loopback_init(const struct device *dev)
 		LOG_ERR("ERROR spawning tx thread");
 		return -1;
 	}
+
+	k_thread_name_set(tx_tid, dev->name);
 
 	return 0;
 }

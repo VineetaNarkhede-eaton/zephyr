@@ -118,7 +118,7 @@ traversed in full.  The kernel does not keep a per-CPU run queue.
 That means that the performance benefits from the
 :kconfig:option:`CONFIG_SCHED_SCALABLE` and :kconfig:option:`CONFIG_SCHED_MULTIQ`
 scheduler backends cannot be realized.  CPU mask processing is
-available only when :kconfig:option:`CONFIG_SCHED_DUMB` is the selected
+available only when :kconfig:option:`CONFIG_SCHED_SIMPLE` is the selected
 backend.  This requirement is enforced in the configuration layer.
 
 SMP Boot Process
@@ -186,7 +186,7 @@ though that is allowed behavior). If the architecture supports directed IPIs
 (see :kconfig:option:`CONFIG_ARCH_HAS_DIRECTED_IPIS`), then the
 architecture also provides a :c:func:`arch_sched_directed_ipi` call, which
 when invoked will flag an interrupt on the specified CPUs. When an interrupt is
-flagged on the CPUs, the :c:func:`z_sched_ipi` function implmented in the
+flagged on the CPUs, the :c:func:`z_sched_ipi` function implemented in the
 scheduler will get invoked on those CPUs. The expectation is that these
 APIs will evolve over time to encompass more functionality (e.g. cross-CPU
 calls), and that the scheduler-specific calls here will be implemented in

@@ -167,13 +167,34 @@ struct btp_bap_modify_broadcast_src_cmd {
 struct btp_bap_set_broadcast_code_cmd {
 	bt_addr_le_t address;
 	uint8_t src_id;
-	uint8_t broadcast_code[BT_AUDIO_BROADCAST_CODE_SIZE];
+	uint8_t broadcast_code[BT_ISO_BROADCAST_CODE_SIZE];
 } __packed;
 
 #define BTP_BAP_SEND_PAST			0x18
 struct btp_bap_send_past_cmd {
 	bt_addr_le_t address;
 	uint8_t src_id;
+} __packed;
+
+#define BTP_BAP_BROADCAST_SOURCE_SETUP_V2	0x19
+struct btp_bap_broadcast_source_setup_v2_cmd {
+	uint8_t broadcast_id[BT_AUDIO_BROADCAST_ID_SIZE];
+	uint8_t streams_per_subgroup;
+	uint8_t subgroups;
+	uint8_t sdu_interval[3];
+	uint8_t framing;
+	uint16_t max_sdu;
+	uint8_t retransmission_num;
+	uint16_t max_transport_latency;
+	uint8_t presentation_delay[3];
+	uint8_t coding_format;
+	uint16_t vid;
+	uint16_t cid;
+	uint8_t cc_ltvs_len;
+	uint8_t cc_ltvs[];
+} __packed;
+struct btp_bap_broadcast_source_setup_v2_rp {
+	uint32_t gap_settings;
 } __packed;
 
 /* BAP events */

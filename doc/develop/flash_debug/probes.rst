@@ -85,7 +85,7 @@ debug microcontroller SOC:
 - LPC4322: :ref:`lpc-link2-onboard-debug-probe`
 - MK20: :ref:`opensda-onboard-debug-probe`
 
-For example, the :ref:`frdm_k64f` board has an MK20 debug microcontroller,
+For example, the :zephyr:board:`frdm_k64f` board has an MK20 debug microcontroller,
 so this board uses the :ref:`opensda-onboard-debug-probe`.
 
 .. _mcu-link-onboard-debug-probe:
@@ -296,7 +296,7 @@ As with all OpenSDA debug probes, the steps for programming the firmware are:
 
 #. After you power on the board, release the reset button. A USB mass storage
    device called **BOOTLOADER** or **MAINTENANCE** will enumerate. If the
-   enumerated device is named **BOOTLOADER**, please first update the booloader
+   enumerated device is named **BOOTLOADER**, please first update the bootloader
    to the latest revision by following the instructions for a
    `DAPLink Bootloader Update`_.
 
@@ -334,7 +334,7 @@ As with all OpenSDA debug probes, the steps for programming the firmware are:
 
 #. After you power on the board, release the reset button. A USB mass storage
    device called **BOOTLOADER** or **MAINTENANCE** will enumerate. If the
-   enumerated device is named **BOOTLOADER**, please first update the booloader
+   enumerated device is named **BOOTLOADER**, please first update the bootloader
    to the latest revision by following the instructions for a
    `DAPLink Bootloader Update`_.
 

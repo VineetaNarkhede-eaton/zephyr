@@ -171,6 +171,19 @@ SECTIONS {
    */
   .imrdata : ALIGN(4096) {
     *(.imrdata .imrdata.*)
+  } >imr
+
+  /* Cold code in IMR memory */
+  .cold : ALIGN(4096) {
+    __cold_start = .;
+    *(.cold .cold.* )
+    __cold_end = .;
+  } >imr
+
+  /* Cold data. */
+  .coldrodata : ALIGN(4096) {
+    __coldrodata_start = .;
+    *(.coldrodata .coldrodata.*)
     _imr_end = .;
   } >imr
 
@@ -284,6 +297,10 @@ SECTIONS {
 
     *libarch__xtensa__core.a:userspace.S.obj(.literal.xtensa_do_syscall)
     *libarch__xtensa__core.a:userspace.S.obj(.text.xtensa_do_syscall)
+
+#ifdef CONFIG_XTENSA_SYSCALL_USE_HELPER
+    *libarch__xtensa__core.a:syscall_helper.c.obj(.text.xtensa_syscall_helper*)
+#endif /* CONFIG_XTENSA_SYSCALL_USE_HELPER */
 
   } > xtensa_vector_code
 #endif /* CONFIG_XTENSA_MMU */
@@ -549,6 +566,7 @@ SECTIONS {
 
   /* rimage module manifest headers */
   .module.boot : { KEEP(*(.module.boot)) } >noload
+  .module.cold : { KEEP(*(.module.cold)) } >noload
   .module.main : { KEEP(*(.module.main)) } >noload
 
  .static_uuid_entries : {

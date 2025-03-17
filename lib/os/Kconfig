@@ -60,7 +60,9 @@ config SPSC_PBUF_CACHE_ALWAYS
 	bool "Always handle cache"
 	help
 	  Handle cache writeback and invalidation for all instances. Option used
-	  to avoid runtime check and thus reduce memory footprint.
+	  to avoid runtime check and thus reduce memory footprint. Beware! It shall
+	  be used only if all packet buffer instances are used for data sharing
+	  between cores.
 
 config SPSC_PBUF_CACHE_NEVER
 	bool "Never handle cache"
@@ -102,6 +104,16 @@ config MPSC_CLEAR_ALLOCATED
 	bool "Clear allocated packet"
 	help
 	  When enabled packet space is zeroed before returning from allocation.
+endif
+
+if SCHED_DEADLINE
+
+config P4WQ_INIT_STAGE_EARLY
+	bool "Early initialization of P4WQ threads"
+	help
+	  Initialize P4WQ threads early so that the P4WQ can be used on devices
+	  initialization sequence.
+
 endif
 
 config REBOOT

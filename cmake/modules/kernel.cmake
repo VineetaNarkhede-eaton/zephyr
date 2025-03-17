@@ -9,7 +9,7 @@
 #
 # This CMake module creates 'project(Zephyr-Kernel)'
 #
-# It defines properties to use while configuring libraries to be build as well
+# It defines properties to use while configuring libraries to be built as well
 # as using add_subdirectory() to add the main <ZEPHYR_BASE>/CMakeLists.txt file.
 #
 # Outcome:
@@ -142,8 +142,12 @@ enable_language(ASM)
 # Verify that the toolchain can compile a dummy file, if it is not we
 # won't be able to test for compatibility with certain C flags.
 zephyr_check_compiler_flag(C "" toolchain_is_ok)
+set(log_file "CMakeConfigureLog.yaml")
+if(CMAKE_VERSION VERSION_LESS "3.26.0")
+  set(log_file "CMakeError.log")
+endif()
 assert(toolchain_is_ok "The toolchain is unable to build a dummy C file.\
- Move ${USER_CACHE_DIR}, re-run and look at CMakeError.log")
+ Move ${USER_CACHE_DIR}, re-run and look at ${log_file}")
 
 include(${ZEPHYR_BASE}/cmake/target_toolchain_flags.cmake)
 
@@ -173,7 +177,9 @@ if(CONFIG_LLEXT AND CONFIG_LLEXT_TYPE_ELF_SHAREDLIB)
   set_property(GLOBAL PROPERTY TARGET_SUPPORTS_SHARED_LIBS TRUE)
 endif()
 
-include(${BOARD_DIR}/board.cmake OPTIONAL)
+foreach(dir ${BOARD_DIRECTORIES})
+  include(${dir}/board.cmake OPTIONAL)
+endforeach()
 
 # If we are using a suitable ethernet driver inside qemu, then these options
 # must be set, otherwise a zephyr instance cannot receive any network packets.

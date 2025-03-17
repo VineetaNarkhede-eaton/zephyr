@@ -99,8 +99,6 @@ static int websocket_context_unref(struct websocket_context *ctx)
 
 static inline bool websocket_context_is_used(struct websocket_context *ctx)
 {
-	NET_ASSERT(ctx);
-
 	return !!atomic_get(&ctx->refcount);
 }
 
@@ -278,6 +276,7 @@ int websocket_connect(int sock, struct websocket_request *wreq,
 	ctx->recv_buf.size = wreq->tmp_buf_len;
 	ctx->sec_accept_key = sec_accept_key;
 	ctx->http_cb = wreq->http_cb;
+	ctx->is_client = 1;
 
 	mbedtls_sha1((const unsigned char *)&rnd_value, sizeof(rnd_value),
 			 sec_accept_key);
@@ -458,7 +457,7 @@ static int websocket_close_vmeth(void *obj)
 static inline int websocket_poll_offload(struct zsock_pollfd *fds, int nfds,
 					 int timeout)
 {
-	int fd_backup[CONFIG_NET_SOCKETS_POLL_MAX];
+	int fd_backup[CONFIG_ZVFS_POLL_MAX];
 	const struct fd_op_vtable *vtable;
 	void *ctx;
 	int ret = 0;
@@ -544,7 +543,8 @@ static int websocket_ioctl_vmeth(void *obj, unsigned int request, va_list args)
 }
 
 #if !defined(CONFIG_NET_TEST)
-static int sendmsg_all(int sock, const struct msghdr *message, int flags)
+static int sendmsg_all(int sock, const struct msghdr *message, int flags,
+			const k_timepoint_t req_end_timepoint)
 {
 	int ret, i;
 	size_t offset = 0;
@@ -556,7 +556,25 @@ static int sendmsg_all(int sock, const struct msghdr *message, int flags)
 
 	while (offset < total_len) {
 		ret = zsock_sendmsg(sock, message, flags);
-		if (ret < 0) {
+
+		if ((ret == 0) || (ret < 0 && errno == EAGAIN)) {
+			struct zsock_pollfd pfd;
+			int pollres;
+			k_ticks_t req_timeout_ticks =
+				sys_timepoint_timeout(req_end_timepoint).ticks;
+			int req_timeout_ms = k_ticks_to_ms_floor32(req_timeout_ticks);
+
+			pfd.fd = sock;
+			pfd.events = ZSOCK_POLLOUT;
+			pollres = zsock_poll(&pfd, 1, req_timeout_ms);
+			if (pollres == 0) {
+				return -ETIMEDOUT;
+			} else if (pollres > 0) {
+				continue;
+			} else {
+				return -errno;
+			}
+		} else if (ret < 0) {
 			return -errno;
 		}
 
@@ -622,8 +640,12 @@ static int websocket_prepare_and_send(struct websocket_context *ctx,
 		tout = K_MSEC(timeout);
 	}
 
+	k_timeout_t req_timeout = K_MSEC(timeout);
+	k_timepoint_t req_end_timepoint = sys_timepoint_calc(req_timeout);
+
 	return sendmsg_all(ctx->real_sock, &msg,
-			   K_TIMEOUT_EQ(tout, K_NO_WAIT) ? MSG_DONTWAIT : 0);
+			   K_TIMEOUT_EQ(tout, K_NO_WAIT) ? ZSOCK_MSG_DONTWAIT : 0,
+			   req_end_timepoint);
 #endif /* CONFIG_NET_TEST */
 }
 
@@ -973,7 +995,7 @@ int websocket_recv_msg(int ws_sock, uint8_t *buf, size_t buf_len,
 			ret = wait_rx(ctx->real_sock, timeout_to_ms(&tout));
 			if (ret == 0) {
 				ret = zsock_recv(ctx->real_sock, ctx->recv_buf.buf,
-						 ctx->recv_buf.size, MSG_DONTWAIT);
+						 ctx->recv_buf.size, ZSOCK_MSG_DONTWAIT);
 				if (ret < 0) {
 					ret = -errno;
 				}
@@ -1049,9 +1071,8 @@ static int websocket_send(struct websocket_context *ctx, const uint8_t *buf,
 
 	NET_DBG("[%p] Sending %zd bytes", ctx, buf_len);
 
-	ret = websocket_send_msg(ctx->sock, buf, buf_len,
-				 WEBSOCKET_OPCODE_DATA_TEXT,
-				 true, true, timeout);
+	ret = websocket_send_msg(ctx->sock, buf, buf_len, WEBSOCKET_OPCODE_DATA_TEXT,
+				 ctx->is_client, true, timeout);
 	if (ret < 0) {
 		errno = -ret;
 		return -1;
@@ -1163,6 +1184,7 @@ int websocket_register(int sock, uint8_t *recv_buf, size_t recv_buf_len)
 	ctx->real_sock = sock;
 	ctx->recv_buf.buf = recv_buf;
 	ctx->recv_buf.size = recv_buf_len;
+	ctx->is_client = 0;
 
 	fd = zvfs_reserve_fd();
 	if (fd < 0) {

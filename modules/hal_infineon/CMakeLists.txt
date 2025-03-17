@@ -4,7 +4,7 @@
 
 if(CONFIG_HAS_XMCLIB OR CONFIG_SOC_FAMILY_PSOC6_LEGACY OR CONFIG_SOC_FAMILY_INFINEON_CAT1)
   zephyr_library_named(modules_hal_infineon)
-  zephyr_library_compile_options(-Wno-array-bounds)
+  zephyr_library_compile_options($<TARGET_PROPERTY:compiler,warning_no_array_bounds>)
 endif()
 
 ## Add PDL sources for XMC devices
@@ -34,6 +34,9 @@ if (CONFIG_SOC_FAMILY_INFINEON_CAT1 AND NOT CONFIG_SOC_FAMILY_PSOC6_LEGACY)
 
   ## Add abstraction-rtos sources
   add_subdirectory(abstraction-rtos)
+
+  add_subdirectory(serial-flash)
+
 endif()
 
 ## Add Wi-Fi assets for AIROC devices

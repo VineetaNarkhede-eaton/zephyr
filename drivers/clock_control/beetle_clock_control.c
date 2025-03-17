@@ -148,7 +148,7 @@ static int beetle_clock_control_get_subsys_rate(const struct device *clock,
 	return 0;
 }
 
-static const struct clock_control_driver_api beetle_clock_control_api = {
+static DEVICE_API(clock_control, beetle_clock_control_api) = {
 	.on = beetle_clock_control_on,
 	.off = beetle_clock_control_off,
 	.get_rate = beetle_clock_control_get_subsys_rate,
@@ -243,7 +243,7 @@ static const struct beetle_clock_control_cfg_t beetle_cc_cfg = {
  * @brief Clock Control device init
  *
  */
-DEVICE_DT_INST_DEFINE(0, &beetle_clock_control_init, NULL,
+DEVICE_DT_INST_DEFINE(0, beetle_clock_control_init, NULL,
 		      NULL, &beetle_cc_cfg, PRE_KERNEL_1,
 		      CONFIG_CLOCK_CONTROL_INIT_PRIORITY,
 		      &beetle_clock_control_api);

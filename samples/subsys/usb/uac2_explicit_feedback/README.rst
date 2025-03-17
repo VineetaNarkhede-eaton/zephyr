@@ -1,6 +1,6 @@
 .. zephyr:code-sample:: uac2-explicit-feedback
    :name: USB Audio asynchronous explicit feedback sample
-   :relevant-api: _usb_device_core_api i2s_interface
+   :relevant-api: usbd_api uac2_device i2s_interface
 
    USB Audio 2 explicit feedback sample playing audio on I2S.
 
@@ -14,6 +14,12 @@ feedback calculation is currently only implemented for the Nordic nRF5340 IC.
 The device running this sample presents itself to the host as a Full-Speed
 Asynchronous USB Audio 2 class device supporting 48 kHz 16-bit 2-channel
 (stereo) playback.
+
+.. warning::
+   Microsoft Windows USB Audio 2.0 driver available since Windows 10,
+   release 1703 expects Full-Speed explicit feedback endpoint wMaxPacketSize to
+   be equal 4, which violates the USB 2.0 Specification.
+   See https://aka.ms/AArvnax for Windows Feedback Hub report.
 
 Explicit Feedback
 *****************

@@ -24,6 +24,8 @@ extern "C" {
 /**
  * @brief Network Management
  * @defgroup net_mgmt Network Management
+ * @since 1.7
+ * @version 1.0.0
  * @ingroup networking
  * @{
  */
@@ -81,7 +83,7 @@ struct net_if;
  * @param mgmt_request The exact request value the handler is being called
  *        through
  * @param iface A valid pointer on struct net_if if the request is meant
- *        to be tight to a network interface. NULL otherwise.
+ *        to be tied to a network interface. NULL otherwise.
  * @param data A valid pointer on a data understood by the handler.
  *        NULL otherwise.
  * @param len Length in byte of the memory pointed by data.
@@ -343,6 +345,12 @@ static inline int net_mgmt_event_wait(uint32_t mgmt_event_mask,
 				      size_t *info_length,
 				      k_timeout_t timeout)
 {
+	ARG_UNUSED(mgmt_event_mask);
+	ARG_UNUSED(raised_event);
+	ARG_UNUSED(iface);
+	ARG_UNUSED(info);
+	ARG_UNUSED(info_length);
+	ARG_UNUSED(timeout);
 	return 0;
 }
 #endif
@@ -381,6 +389,12 @@ static inline int net_mgmt_event_wait_on_iface(struct net_if *iface,
 					       size_t *info_length,
 					       k_timeout_t timeout)
 {
+	ARG_UNUSED(iface);
+	ARG_UNUSED(mgmt_event_mask);
+	ARG_UNUSED(raised_event);
+	ARG_UNUSED(info);
+	ARG_UNUSED(info_length);
+	ARG_UNUSED(timeout);
 	return 0;
 }
 #endif

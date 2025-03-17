@@ -18,6 +18,8 @@ extern "C" {
 /**
  * @brief Network hostname configuration library
  * @defgroup net_hostname Network Hostname Library
+ * @since 1.10
+ * @version 0.8.0
  * @ingroup networking
  * @{
  */
@@ -73,6 +75,8 @@ int net_hostname_set(char *host, size_t len);
 #else
 static inline int net_hostname_set(char *host, size_t len)
 {
+	ARG_UNUSED(host);
+	ARG_UNUSED(len);
 	return -ENOTSUP;
 }
 #endif

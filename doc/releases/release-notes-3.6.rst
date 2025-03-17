@@ -1007,7 +1007,7 @@ Libraries / Subsystems
     MCUboot or currently running application slot.
 
   * Fixed an issue whereby messages that were too large to be sent over the UDP transport would
-    wrongly return :c:enum:`MGMT_ERR_EINVAL` instead of :c:enum:`MGMT_ERR_EMSGSIZE`.
+    wrongly return :c:enumerator:`MGMT_ERR_EINVAL` instead of :c:enumerator:`MGMT_ERR_EMSGSIZE`.
 
   * Fixed an issue where confirming an image in Direct XIP mode would always confirm the image in
     the primary slot even when executing from the secondary slot. Now the currently active image is
@@ -1301,9 +1301,9 @@ Additionally, the following changes in Zephyr were done:
 Tests and Samples
 *****************
 
-* :ref:`native_sim<native_sim>` has replaced :ref:`native_posix<native_posix>` as the default
+* :ref:`native_sim<native_sim>` has replaced ``native_posix`` as the default
   test platform.
-  :ref:`native_posix<native_posix>` remains supported and used in testing but will be deprecated
+  ``native_posix`` remains supported and used in testing but will be deprecated
   in a future release.
 
 * Bluetooth split stacks tests, where the BT host and controller are run in separate MCUs, are

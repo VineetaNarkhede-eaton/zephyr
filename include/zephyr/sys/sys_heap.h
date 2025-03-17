@@ -10,6 +10,7 @@
 #include <stdbool.h>
 #include <zephyr/types.h>
 #include <zephyr/sys/mem_stats.h>
+#include <zephyr/toolchain.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -72,13 +73,11 @@ struct z_heap_stress_result {
  * @{
  */
 
-#ifdef CONFIG_SYS_HEAP_RUNTIME_STATS
-
 /**
  * @brief Get the runtime statistics of a sys_heap
  *
  * @param heap Pointer to specified sys_heap
- * @param stats_t Pointer to struct to copy statistics into
+ * @param stats Pointer to struct to copy statistics into
  * @return -EINVAL if null pointers, otherwise 0
  */
 int sys_heap_runtime_stats_get(struct sys_heap *heap,
@@ -94,8 +93,6 @@ int sys_heap_runtime_stats_get(struct sys_heap *heap,
  * @return -EINVAL if null pointer was passed, otherwise 0
  */
 int sys_heap_runtime_stats_reset_max(struct sys_heap *heap);
-
-#endif
 
 /** @brief Initialize sys_heap
  *
@@ -209,7 +206,15 @@ size_t sys_heap_usable_size(struct sys_heap *heap, void *mem);
  * @param heap Heap to validate
  * @return true, if the heap is valid, otherwise false
  */
+#ifdef CONFIG_SYS_HEAP_VALIDATE
 bool sys_heap_validate(struct sys_heap *heap);
+#else
+static inline bool sys_heap_validate(struct sys_heap *heap)
+{
+	ARG_UNUSED(heap);
+	return true;
+}
+#endif
 
 /** @brief sys_heap stress test rig
  *
@@ -257,6 +262,24 @@ void sys_heap_stress(void *(*alloc_fn)(void *arg, size_t bytes),
  * @param dump_chunks True to print the entire heap chunk list
  */
 void sys_heap_print_info(struct sys_heap *heap, bool dump_chunks);
+
+/** @brief Save the heap pointer
+ *
+ * The heap pointer is saved into an internal array, if there is space.
+ *
+ * @param heap Heap to save
+ * @return -EINVAL if null pointer or array is full, otherwise 0
+ */
+int sys_heap_array_save(struct sys_heap *heap);
+
+/** @brief Get the array of saved heap pointers
+ *
+ * Returns the pointer to the array of heap pointers.
+ *
+ * @param heap Heap array
+ * @return -EINVAL if null pointer, otherwise number of saved pointers
+ */
+int sys_heap_array_get(struct sys_heap ***heap);
 
 /**
  * @}

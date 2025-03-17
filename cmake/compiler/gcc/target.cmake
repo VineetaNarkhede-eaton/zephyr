@@ -39,10 +39,11 @@ endif()
 # Add check for GCC version >= 13.1
 execute_process(
     COMMAND ${CMAKE_C_COMPILER} -dumpfullversion
-    OUTPUT_VARIABLE temp_compiler_version
+    OUTPUT_VARIABLE GCC_COMPILER_VERSION
     )
 
-if("${temp_compiler_version}" VERSION_GREATER_EQUAL 13.1.0)
+if("${GCC_COMPILER_VERSION}" VERSION_LESS 4.3.0 OR
+    "${GCC_COMPILER_VERSION}" VERSION_GREATER_EQUAL 13.1.0)
     set(fix_header_file include/limits.h)
 else()
     set(fix_header_file include-fixed/limits.h)
@@ -109,8 +110,7 @@ get_filename_component(LIBGCC_DIR ${LIBGCC_FILE_NAME} DIRECTORY)
 
 assert_exists(LIBGCC_DIR)
 
-LIST(APPEND LIB_INCLUDE_DIR "-L\"${LIBGCC_DIR}\"")
-LIST(APPEND TOOLCHAIN_LIBS gcc)
+set_linker_property(PROPERTY lib_include_dir "-L\"${LIBGCC_DIR}\"")
 
 # For CMake to be able to test if a compiler flag is supported by the
 # toolchain we need to give CMake the necessary flags to compile and

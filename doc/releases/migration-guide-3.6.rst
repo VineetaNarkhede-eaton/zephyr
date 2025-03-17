@@ -46,6 +46,9 @@ Kernel
   :kconfig:option:`CONFIG_HEAP_MEM_POOL_IGNORE_MIN` option has been introduced (which defaults
   being disabled).
 
+* STM32H7 and STM32F7 should now activate the cache (Icache and Dcache) by setting explicitly
+  the  ``CONFIG_CACHE_MANAGEMENT`` to ``y``.
+
 Boards
 ******
 
@@ -238,7 +241,7 @@ Bluetooth HCI
 Controller Area Network (CAN)
 =============================
 
-* The native Linux SocketCAN driver, which can now be used in both :ref:`native_posix<native_posix>`
+* The native Linux SocketCAN driver, which can now be used in both ``native_posix``
   and :ref:`native_sim<native_sim>` with or without an embedded C-library, has been renamed to
   reflect this:
 

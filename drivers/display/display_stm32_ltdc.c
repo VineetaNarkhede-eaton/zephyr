@@ -17,9 +17,13 @@
 #include <zephyr/drivers/pinctrl.h>
 #include <zephyr/drivers/clock_control/stm32_clock_control.h>
 #include <zephyr/drivers/clock_control.h>
+#include <zephyr/drivers/reset.h>
 #include <zephyr/pm/device.h>
 #include <zephyr/sys/barrier.h>
 #include <zephyr/cache.h>
+#if defined(CONFIG_STM32_LTDC_FB_USE_SHARED_MULTI_HEAP)
+#include <zephyr/multi_heap/shared_multi_heap.h>
+#endif
 
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(display_stm32_ltdc, CONFIG_DISPLAY_LOG_LEVEL);
@@ -73,6 +77,7 @@ struct display_stm32_ltdc_config {
 	struct gpio_dt_spec disp_on_gpio;
 	struct gpio_dt_spec bl_ctrl_gpio;
 	struct stm32_pclken pclken;
+	const struct reset_dt_spec reset;
 	const struct pinctrl_dev_config *pctrl;
 	void (*irq_config_func)(const struct device *dev);
 	const struct device *display_controller;
@@ -247,13 +252,22 @@ static int stm32_ltdc_read(const struct device *dev, const uint16_t x,
 	return 0;
 }
 
+static void *stm32_ltdc_get_framebuffer(const struct device *dev)
+{
+	struct display_stm32_ltdc_data *data = dev->data;
+
+	return ((void *)data->front_buf);
+}
+
 static int stm32_ltdc_display_blanking_off(const struct device *dev)
 {
 	const struct display_stm32_ltdc_config *config = dev->config;
 	const struct device *display_dev = config->display_controller;
 
+	/* Panel controller's phandle is not passed to LTDC in devicetree */
 	if (display_dev == NULL) {
-		return 0;
+		LOG_ERR("There is no panel controller to forward blanking_off call to");
+		return -ENOSYS;
 	}
 
 	if (!device_is_ready(display_dev)) {
@@ -269,11 +283,13 @@ static int stm32_ltdc_display_blanking_on(const struct device *dev)
 	const struct display_stm32_ltdc_config *config = dev->config;
 	const struct device *display_dev = config->display_controller;
 
+	/* Panel controller's phandle is not passed to LTDC in devicetree */
 	if (display_dev == NULL) {
-		return 0;
+		LOG_ERR("There is no panel controller to forward blanking_on call to");
+		return -ENOSYS;
 	}
 
-	if (!device_is_ready(config->display_controller)) {
+	if (!device_is_ready(display_dev)) {
 		LOG_ERR("Display device %s not ready", display_dev->name);
 		return -ENODEV;
 	}
@@ -354,8 +370,7 @@ static int stm32_ltdc_init(const struct device *dev)
 #endif
 
 	/* reset LTDC peripheral */
-	__HAL_RCC_LTDC_FORCE_RESET();
-	__HAL_RCC_LTDC_RELEASE_RESET();
+	(void)reset_line_toggle_dt(&config->reset);
 
 	data->current_pixel_format = DISPLAY_INIT_PIXEL_FORMAT;
 	data->current_pixel_size = STM32_LTDC_INIT_PIXEL_SIZE;
@@ -378,6 +393,21 @@ static int stm32_ltdc_init(const struct device *dev)
 	if (err != HAL_OK) {
 		return err;
 	}
+
+#if defined(CONFIG_STM32_LTDC_FB_USE_SHARED_MULTI_HEAP)
+	data->frame_buffer = shared_multi_heap_aligned_alloc(
+			CONFIG_VIDEO_BUFFER_SMH_ATTRIBUTE,
+			32,
+			CONFIG_STM32_LTDC_FB_NUM * data->frame_buffer_len);
+
+	if (data->frame_buffer == NULL) {
+		return -ENOMEM;
+	}
+
+	data->pend_buf = data->frame_buffer;
+	data->front_buf = data->frame_buffer;
+	data->hltdc.LayerCfg[0].FBStartAdress = (uint32_t) data->frame_buffer;
+#endif
 
 	/* Configure layer 1 (only one layer is used) */
 	/* LTDC starts fetching pixels and sending them to display after this call */
@@ -421,8 +451,7 @@ static int stm32_ltdc_suspend(const struct device *dev)
 	}
 
 	/* Reset LTDC peripheral registers */
-	__HAL_RCC_LTDC_FORCE_RESET();
-	__HAL_RCC_LTDC_RELEASE_RESET();
+	(void)reset_line_toggle_dt(&config->reset);
 
 	/* Turn off LTDC peripheral clock */
 	err = clock_control_off(DEVICE_DT_GET(STM32_CLOCK_CONTROL_NODE),
@@ -455,9 +484,10 @@ static int stm32_ltdc_pm_action(const struct device *dev,
 }
 #endif /* CONFIG_PM_DEVICE */
 
-static const struct display_driver_api stm32_ltdc_display_api = {
+static DEVICE_API(display, stm32_ltdc_display_api) = {
 	.write = stm32_ltdc_write,
 	.read = stm32_ltdc_read,
+	.get_framebuffer = stm32_ltdc_get_framebuffer,
 	.get_capabilities = stm32_ltdc_get_capabilities,
 	.set_pixel_format = stm32_ltdc_set_pixel_format,
 	.set_orientation = stm32_ltdc_set_orientation,
@@ -491,7 +521,19 @@ static const struct display_driver_api stm32_ltdc_display_api = {
 #define STM32_LTDC_FRAME_BUFFER_LEN(inst)							\
 	(STM32_LTDC_INIT_PIXEL_SIZE * DT_INST_PROP(inst, height) * DT_INST_PROP(inst, width))	\
 
+#if defined(CONFIG_STM32_LTDC_FB_USE_SHARED_MULTI_HEAP)
+#define STM32_LTDC_FRAME_BUFFER_ADDR(inst)  (NULL)
+#define STM32_LTDC_FRAME_BUFFER_DEFINE(inst)
+#else
+#define STM32_LTDC_FRAME_BUFFER_ADDR(inst)  frame_buffer_##inst
+#define STM32_LTDC_FRAME_BUFFER_DEFINE(inst)    \
+	/* frame buffer aligned to cache line width for optimal cache flushing */                  \
+	FRAME_BUFFER_SECTION static uint8_t __aligned(32)                                          \
+		frame_buffer_##inst[CONFIG_STM32_LTDC_FB_NUM * STM32_LTDC_FRAME_BUFFER_LEN(inst)];
+#endif
+
 #define STM32_LTDC_DEVICE(inst)									\
+	STM32_LTDC_FRAME_BUFFER_DEFINE(inst);                       \
 	STM32_LTDC_DEVICE_PINCTRL_INIT(inst);							\
 	PM_DEVICE_DT_INST_DEFINE(inst, stm32_ltdc_pm_action);					\
 	static void stm32_ltdc_irq_config_func_##inst(const struct device *dev)			\
@@ -503,15 +545,11 @@ static const struct display_driver_api stm32_ltdc_display_api = {
 			    0);									\
 		irq_enable(DT_INST_IRQN(inst));							\
 	}											\
-	/* frame buffer aligned to cache line width for optimal cache flushing */		\
-	FRAME_BUFFER_SECTION static uint8_t __aligned(32)					\
-				frame_buffer_##inst[CONFIG_STM32_LTDC_FB_NUM *			\
-							STM32_LTDC_FRAME_BUFFER_LEN(inst)];	\
 	static struct display_stm32_ltdc_data stm32_ltdc_data_##inst = {			\
-		.frame_buffer = frame_buffer_##inst,						\
+		.frame_buffer = STM32_LTDC_FRAME_BUFFER_ADDR(inst),				\
 		.frame_buffer_len = STM32_LTDC_FRAME_BUFFER_LEN(inst),				\
-		.front_buf = frame_buffer_##inst,						\
-		.pend_buf = frame_buffer_##inst,						\
+		.front_buf = STM32_LTDC_FRAME_BUFFER_ADDR(inst),				\
+		.pend_buf = STM32_LTDC_FRAME_BUFFER_ADDR(inst),					\
 		.hltdc = {									\
 			.Instance = (LTDC_TypeDef *) DT_INST_REG_ADDR(inst),			\
 			.Init = {								\
@@ -582,7 +620,7 @@ static const struct display_driver_api stm32_ltdc_display_api = {
 				.Alpha0 = 0,							\
 				.BlendingFactor1 = LTDC_BLENDING_FACTOR1_PAxCA,			\
 				.BlendingFactor2 = LTDC_BLENDING_FACTOR2_PAxCA,			\
-				.FBStartAdress = (uint32_t) frame_buffer_##inst,		\
+				.FBStartAdress = (uint32_t) STM32_LTDC_FRAME_BUFFER_ADDR(inst), \
 				.ImageWidth = DT_INST_PROP(inst, width),			\
 				.ImageHeight = DT_INST_PROP(inst, height),			\
 				.Backcolor.Red =						\
@@ -601,6 +639,7 @@ static const struct display_driver_api stm32_ltdc_display_api = {
 				(GPIO_DT_SPEC_INST_GET(inst, disp_on_gpios)), ({ 0 })),		\
 		.bl_ctrl_gpio = COND_CODE_1(DT_INST_NODE_HAS_PROP(inst, bl_ctrl_gpios),		\
 				(GPIO_DT_SPEC_INST_GET(inst, bl_ctrl_gpios)), ({ 0 })),		\
+		.reset = RESET_DT_SPEC_INST_GET(0),						\
 		.pclken = {									\
 			.enr = DT_INST_CLOCKS_CELL(inst, bits),					\
 			.bus = DT_INST_CLOCKS_CELL(inst, bus)					\
